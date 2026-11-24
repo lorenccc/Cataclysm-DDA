@@ -22,6 +22,37 @@ import android.view.WindowManager;
 import android.widget.Toast;
 
 public class CataclysmDDA extends SDLActivity {
+    private volatile AiObserver observer;
+
+    public int aiPoll(int ticket) {
+        AiObserver current = observer;
+        return current == null ? 0 : current.poll(ticket);
+    }
+
+    public void aiObserve(int ticket, byte[] session, byte[] snapshot) {
+        AiObserver current = observer;
+        if (current != null) current.observe(ticket, session, snapshot);
+    }
+
+    @Override
+    protected void onPause() {
+        if (observer != null) observer.pause();
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (observer != null) observer.close();
+        super.onDestroy();
+    }
+
+    @Override
+    protected void onActivityResult(int request, int result, android.content.Intent data) {
+        super.onActivityResult(request, result, data);
+        if (observer != null && request == AiObserver.EXPORT && result == RESULT_OK && data != null)
+            observer.exportTo(data.getData());
+    }
+
     private static final String TAG = "CDDA";
     public static final String PREF_SYSTEM_UI_MODE = "Android system UI mode";
     public static final String PREF_FORCE_FULLSCREEN = "Force fullscreen";
@@ -63,6 +94,7 @@ public class CataclysmDDA extends SDLActivity {
         super.onCreate(savedInstanceState);
         if (mLayout != null) {
             mLayout.setVisibility(View.INVISIBLE);
+            observer = new AiObserver(this);
         }
         applyStoredScreenOrientation(this);
         setImeInsetListener();

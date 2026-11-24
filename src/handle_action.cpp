@@ -277,15 +277,10 @@ input_context game::get_player_input( std::string &action )
     }
 
     here.update_visibility_cache( pos.z() );
-    if( uquit != QUIT_WATCH ) {
-        ai_bridge_observe( get_avatar(), here );
-    }
+    static unsigned int serial = 0;
+    const int ticket = static_cast<int>( ++serial & 0x7fffffffU );
     const auto poll_ai = [&]() {
-        if( uquit == QUIT_WATCH ) return false;
-        const action_id ai = ai_bridge_action();
-        if( ai == ACTION_NULL ) return false;
-        action = action_ident( ai );
-        return true;
+        return uquit != QUIT_WATCH && ai_poll( u, here, ticket, action );
     };
     const visibility_variables &cache = here.get_visibility_variables_cache();
     const level_cache &map_cache = here.get_cache_ref( pos.z() );
@@ -3224,6 +3219,9 @@ bool game::handle_action()
     } else {
         // No auto-move, ask player for input
         ctxt = get_player_input( action );
+        if( action == "AI_ACTIVITY" ) {
+            return true;
+        }
     }
 
     // Remove asynchronous animations if any action taken before the input timeout
