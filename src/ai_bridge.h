@@ -10,7 +10,7 @@
 
 // Experimental local bridge. No network or credentials in the engine.
 // A controller writes one command atomically; absent commands leave manual input intact.
-inline action_id ai_bridge_action( avatar &u, map &here )
+inline void ai_bridge_observe( avatar &u, map &here )
 {
     const std::string base = PATH_INFO::savedir();
     // Publish only terrain the avatar can actually see.
@@ -23,7 +23,7 @@ inline action_id ai_bridge_action( avatar &u, map &here )
         for( int dy = -5; dy <= 5; ++dy ) {
             for( int dx = -5; dx <= 5; ++dx ) {
                 const auto p = pos + tripoint_rel_ms( dx, dy, 0 );
-                if( u.sees( here, p ) ) {
+                if( here.inbounds( p ) && u.sees( here, p ) ) {
                     state << dx << "," << dy << ": " << here.tername( p )
                           << "; " << here.furnname( p ) << "; " << here.move_cost( p ) << "\n";
                 }
@@ -32,6 +32,11 @@ inline action_id ai_bridge_action( avatar &u, map &here )
         state.close();
         std::rename( ( base + "/ai_state.tmp" ).c_str(), ( base + "/ai_state.txt" ).c_str() );
     }
+}
+
+inline action_id ai_bridge_action()
+{
+    const std::string base = PATH_INFO::savedir();
     std::ifstream command( base + "/ai_command.txt" );
     std::string token;
     if( !( command >> token ) ) {
