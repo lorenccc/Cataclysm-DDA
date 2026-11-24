@@ -277,6 +277,16 @@ input_context game::get_player_input( std::string &action )
     }
 
     here.update_visibility_cache( pos.z() );
+    if( uquit != QUIT_WATCH ) {
+        ai_bridge_observe( get_avatar(), here );
+    }
+    const auto poll_ai = [&]() {
+        if( uquit == QUIT_WATCH ) return false;
+        const action_id ai = ai_bridge_action();
+        if( ai == ACTION_NULL ) return false;
+        action = action_ident( ai );
+        return true;
+    };
     const visibility_variables &cache = here.get_visibility_variables_cache();
     const level_cache &map_cache = here.get_cache_ref( pos.z() );
     const auto &visibility_cache = map_cache.visibility_cache;
@@ -462,12 +472,12 @@ input_context game::get_player_input( std::string &action )
             }
 
             ui_manager::redraw_invalidated();
-        } while( handle_mouseview( ctxt, action ) && uquit != QUIT_WATCH
+        } while( !poll_ai() && handle_mouseview( ctxt, action ) && uquit != QUIT_WATCH
                  && ( action != "TIMEOUT" || !current_turn.has_timeout_elapsed() ) );
         ctxt.reset_timeout();
     } else {
         ctxt.set_timeout( 125 );
-        while( handle_mouseview( ctxt, action ) ) {
+        while( !poll_ai() && handle_mouseview( ctxt, action ) ) {
             if( action == "TIMEOUT" && current_turn.has_timeout_elapsed() ) {
                 break;
             }
@@ -3213,10 +3223,7 @@ bool game::handle_action()
         return false;
     } else {
         // No auto-move, ask player for input
-        act = ai_bridge_action( player_character, here );
-        if( act == ACTION_NULL ) {
-            ctxt = get_player_input( action );
-        }
+        ctxt = get_player_input( action );
     }
 
     // Remove asynchronous animations if any action taken before the input timeout
