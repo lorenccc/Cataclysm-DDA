@@ -1277,7 +1277,7 @@ static void wait()
     }
 }
 
-static void sleep()
+static void sleep( bool autonomous = false )
 {
     avatar &player_character = get_avatar();
     if( has_vehicle_control( player_character ) ) {
@@ -1375,24 +1375,30 @@ static void sleep()
 
     /* Calculate key and window variables, generate window,
        and loop until we get a valid answer. */
-    as_m.query();
-
-    if( as_m.ret == 1 ) {
-        g->quicksave();
-    } else if( as_m.ret == 2 || as_m.ret < 0 ) {
-        return;
+    if( autonomous ) {
+        if( !active.empty() ) {
+            add_msg( m_info, _( "You may want to extinguish or turn off:" ) );
+            return;
+        }
+    } else {
+        as_m.query();
+        if( as_m.ret == 1 ) {
+            g->quicksave();
+        } else if( as_m.ret == 2 || as_m.ret < 0 ) {
+            return;
+        }
     }
 
     if( !g->warn_player_maybe_anger_local_faction( false, true ) ) {
         return; // player declined to annoy locals by illegally sleeping in their territory
     }
 
-    time_duration try_sleep_dur = 24_hours;
+    time_duration try_sleep_dur = autonomous ? 20_minutes : 24_hours;
     std::string deaf_text;
     if( player_character.is_deaf() && !player_character.has_flag( json_flag_ALARMCLOCK ) ) {
         deaf_text = _( "<color_c_red> (DEAF!)</color>" );
     }
-    if( player_character.has_alarm_clock() ) {
+    if( !autonomous && player_character.has_alarm_clock() ) {
         /* Reuse menu to ask player whether they want to set an alarm. */
         bool can_hibernate = player_character.get_hunger() < -60 &&
                              player_character.has_active_mutation( trait_HIBERNATE );
@@ -3219,7 +3225,15 @@ bool game::handle_action()
     } else {
         // No auto-move, ask player for input
         ctxt = get_player_input( action );
+        if( action == "AI_SLEEP" ) {
+            sleep( true );
+            action = "AI_ACTIVITY";
+        }
         if( action == "AI_ACTIVITY" ) {
+            ++user_action_counter;
+            player_character.clear_destination();
+            destination_preview.clear();
+            player_character.magic->break_channeling( player_character );
             return true;
         }
     }

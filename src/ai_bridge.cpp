@@ -169,8 +169,7 @@ bool ai_poll( avatar &u, map &here, int ticket, std::string &action )
                                    tripoint_rel_ms( cell % 3 - 1, cell / 3 - 1, 0 ), iso_rotate::yes ) );
         return true;
     } else if( cmd == 11 ) {
-        u.try_to_sleep( 20_minutes );
-        action = "AI_ACTIVITY";
+        action = "AI_SLEEP";
         return true;
     } else if( ( cmd >= 20 && cmd <= 28 ) || ( cmd >= 30 && cmd <= 38 ) ) {
         const int cell = cmd % 10;
