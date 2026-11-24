@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "action.h"
+#include "ai_bridge.h"
 #include "activity_actor_definitions.h"
 #include "advanced_inv.h"
 #include "auto_note.h"
@@ -3212,7 +3213,10 @@ bool game::handle_action()
         return false;
     } else {
         // No auto-move, ask player for input
-        ctxt = get_player_input( action );
+        act = ai_bridge_action( player_character, here );
+        if( act == ACTION_NULL ) {
+            ctxt = get_player_input( action );
+        }
     }
 
     // Remove asynchronous animations if any action taken before the input timeout
