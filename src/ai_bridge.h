@@ -12,7 +12,26 @@
 // A controller writes one command atomically; absent commands leave manual input intact.
 inline action_id ai_bridge_action( avatar &u, map &here )
 {
-    const std::string base = PATH_INFO::savedir().get_unrelative_path().string();
+    const std::string base = PATH_INFO::savedir();
+    // Publish only terrain the avatar can actually see.
+    const auto pos = u.pos_bub();
+    std::ofstream state( base + "/ai_state.tmp", std::ios::trunc );
+    if( state ) {
+        state << "Hunger: " << u.get_hunger() << "\nThirst: " << u.get_thirst()
+              << "\nPain: " << u.get_perceived_pain() << "\n";
+        state << "Visible terrain (relative x,y; movement cost):\n";
+        for( int dy = -5; dy <= 5; ++dy ) {
+            for( int dx = -5; dx <= 5; ++dx ) {
+                const auto p = pos + tripoint_rel_ms( dx, dy, 0 );
+                if( u.sees( here, p ) ) {
+                    state << dx << "," << dy << ": " << here.tername( p )
+                          << "; " << here.furnname( p ) << "; " << here.move_cost( p ) << "\n";
+                }
+            }
+        }
+        state.close();
+        std::rename( ( base + "/ai_state.tmp" ).c_str(), ( base + "/ai_state.txt" ).c_str() );
+    }
     std::ifstream command( base + "/ai_command.txt" );
     std::string token;
     if( !( command >> token ) ) {
