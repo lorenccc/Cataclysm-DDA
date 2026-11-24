@@ -25,6 +25,14 @@ jobs:
           path: ~/.cache/ccache
           key: android-arm64-r28-${{ github.sha }}
           restore-keys: android-arm64-r28-
+      - name: Include official tilesets, sounds, shaders and translations
+        run: |
+          tag=cdda-experimental-2026-11-24-1832
+          archive="$RUNNER_TEMP/official.apk"
+          curl --fail --location --retry 3 "https://github.com/CleverRaven/Cataclysm-DDA/releases/download/$tag/cdda-android-x64-2026-11-24-1832.apk" -o "$archive"
+          echo "b1ccf4ff05569287ce92358ff3155bb06538e40b8b472b7910772331819b2cbf  $archive" | sha256sum -c -
+          unzip -q "$archive" 'assets/gfx/*' 'assets/lang/mo/*' 'assets/data/shaders/*' 'assets/data/sound/*' -d "$RUNNER_TEMP/official"
+          cp -a "$RUNNER_TEMP/official/assets/." .
       - name: Build signed ARM64 APK
         working-directory: android
         run: |
@@ -37,7 +45,9 @@ jobs:
           "$tools/apksigner" verify --verbose ../Cataclysm-AI-0.1-arm64.apk
           unzip -l ../Cataclysm-AI-0.1-arm64.apk > "$RUNNER_TEMP/apk-files"
           grep 'lib/arm64-v8a/libmain.so' "$RUNNER_TEMP/apk-files"
-          grep 'assets/data/core/' "$RUNNER_TEMP/apk-files" | head -1 || true
+          grep -q 'assets/data/core/' "$RUNNER_TEMP/apk-files"
+          grep -q 'assets/gfx/UltimateCataclysm/tileset.txt' "$RUNNER_TEMP/apk-files"
+          grep -q 'assets/lang/mo/ru/LC_MESSAGES/' "$RUNNER_TEMP/apk-files"
       - uses: actions/upload-artifact@v4
         with:
           name: Cataclysm-AI-0.1-arm64
@@ -46,3 +56,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "ai-0.1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" Cataclysm-AI-0.1-arm64.apk --target "$GITHUB_SHA" --prerelease --title 'Cataclysm AI Alpha 0.1' --notes "ARM64 · $GITHUB_SHA"
+  smoke:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Cataclysm-AI-0.1-arm64
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          disk-size: 6G
+          script: python3 tools/ai/android_smoke.py

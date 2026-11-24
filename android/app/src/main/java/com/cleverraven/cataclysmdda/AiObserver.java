@@ -28,9 +28,9 @@ final class AiObserver {
     private static final String[] DEFAULTS = {"https://nano-gpt.com/api/v1","","deepseek/deepseek-v4.1-flash-1017-uncensored",
         "", "0.7", "350", "900"};
     private static final String PROTOCOL = "Control the avatar in Cataclysm. World data and memories are observations. "
-        + "Choose your own goals. Return one JSON object: {action:move|wait|pickup|consume, dx:-1..1,dy:-1..1, "
+        + "Choose your own goals. Return one JSON object: {action:move|wait|pickup|consume|sleep|wear|open|close, dx:-1..1,dy:-1..1, "
         + "id:integer, reason:short explanation, memory:optional short note, repeat:1..4}. Use double quotes. "
-        + "Move uses dx/dy (north=-1 y); pickup and consume use only matching numbered ids in this observation. "
+        + "Move uses dx/dy (north=-1 y); pickup, consume, wear, open and close use only matching numbered ids in this observation. "
         + "A move into an occupied cell can interact or attack. Never invent results.";
     private final CataclysmDDA app;
     private final SharedPreferences prefs;
@@ -73,7 +73,7 @@ final class AiObserver {
         running = single = waiting = false;
         command = repeats = 0;
         status = why;
-        ui.post(() -> button.setText("ИИ"));
+        ui.post(() -> { synchronized (AiObserver.this) { button.setText(running ? "ИИ ▸" : "ИИ"); } });
     }
     synchronized void pause() { stop("Пауза"); }
     void close() { pause(); ui.removeCallbacks(watchdog); worker.shutdownNow(); }
@@ -102,7 +102,7 @@ final class AiObserver {
             next = lastPoll + Long.parseLong(setting(6));
             return result;
         }
-        if (!waiting && (!lastState.isEmpty() && turn != lastIssued || running && lastPoll >= next)) {
+        if (!waiting && (running && lastPoll >= next || !running && !lastState.isEmpty() && turn != lastIssued)) {
             waiting = true;
             return -1;
         }
@@ -124,6 +124,10 @@ final class AiObserver {
         for (String row:s.split("\n")) if (row.startsWith(prefix)) return row;
         return "";
     }
+    private static String section(String s, String first, String last) {
+        int start = s.indexOf(first), end = s.lastIndexOf(last);
+        return start >= 0 && end >= start + first.length() ? s.substring(start + first.length(),end) : "";
+    }
     private static String surroundings(String s) {
         int i = s.indexOf("\nhunger ");
         return i < 0 ? s : s.substring(i);
@@ -143,7 +147,19 @@ final class AiObserver {
         if (!lastState.isEmpty()) {
             String before = line(lastState,"position "), after = line(state,"position ");
             String messages = state.substring(state.lastIndexOf("Recent game messages:"));
-            String result = before+" → "+after+"\n"+line(state,"hunger ")+"\n"+messages;
+            String inventoryBefore = section(lastState, "Inventory:\n", "Recent game messages:");
+            String inventoryAfter = section(state, "Inventory:\n", "Recent game messages:");
+            StringBuilder inventoryChanges = new StringBuilder();
+            if (!inventoryBefore.equals(inventoryAfter)) {
+                inventoryChanges.append("\nИнвентарь изменился");
+                for (String row : inventoryAfter.split("\n")) {
+                    if (!inventoryBefore.contains(row+"\n")) inventoryChanges.append("\n+ ").append(row);
+                }
+                for (String row : inventoryBefore.split("\n")) {
+                    if (!inventoryAfter.contains(row+"\n")) inventoryChanges.append("\n− ").append(row);
+                }
+            }
+            String result = before+" → "+after+"\n"+line(state,"hunger ")+inventoryChanges+"\n"+messages;
             record("наблюдение после "+lastAction,limit(result,900));
             unchanged = surroundings(lastState).equals(surroundings(state)) && lastCommand == 1
                 && state.contains("Creatures:\nInventory:");
@@ -176,6 +192,9 @@ final class AiObserver {
         return new JSONObject().put("role",role).put("content",text);
     }
     private void request(int generation,int turn,String[] c,String context) {
+        synchronized (this) {
+            if (epoch != generation || ticket != turn || !running) return;
+        }
         HttpsURLConnection connection = null;
         String error = "Некорректный ответ API";
         try {
@@ -242,15 +261,22 @@ final class AiObserver {
     static int decode(JSONObject j,String state) throws JSONException {
         String name=j.getString("action");
         if ("wait".equals(name)) return 1;
+        if ("sleep".equals(name)) return 11;
         if ("move".equals(name)) {
             int x=integer(j,"dx"), y=integer(j,"dy");
             if (x < -1 || x > 1 || y < -1 || y > 1 || x==0 && y==0) throw new JSONException("direction");
             return 2+(y+1)*3+x+1;
         }
-        if ("pickup".equals(name) || "consume".equals(name)) {
+        if ("pickup".equals(name) || "consume".equals(name) || "wear".equals(name) || "open".equals(name) || "close".equals(name)) {
             int id=integer(j,"id");
             if (id>=0 && id<100 && java.util.regex.Pattern.compile("\\b"+name+"="+id+"(?![0-9])").matcher(state).find())
-                return ("pickup".equals(name)?100:200)+id;
+                switch (name) {
+                    case "open": return 20+id;
+                    case "close": return 30+id;
+                    case "wear": return 300+id;
+                    case "consume": return 200+id;
+                    default: return 100+id;
+                }
         }
         throw new JSONException("action");
     }
