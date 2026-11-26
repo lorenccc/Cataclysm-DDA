@@ -33,7 +33,7 @@ def click_text(wanted, timeout):
                 print("Tapped", wanted, flush=True)
                 return
         for node in nodes:
-            if node.get("scrollable") == "true" and wanted in ("API и личность", "Память персонажа"):
+            if node.get("scrollable") == "true" and wanted in ("API и личность", "Память персонажа", "Software rendering"):
                 x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
                 x = str((x1+x2)//2)
                 adb("shell","input","swipe",x,str(y2-10),x,str(y1+10),"400")
@@ -63,7 +63,7 @@ def report_failure():
     print(adb("logcat", "-b", "crash", "-d")[-14000:], flush=True)
     lines = adb("logcat", "-d", "-t", "4000").splitlines()
     print("\n".join(line for line in lines if any(
-        key in line for key in ("SDL", "FATAL", "libmain.so", "cataclysmdda", "AndroidRuntime")
+        key in line for key in ("SDL", "FATAL", "libmain.so", "cataclysmdda", "AndroidRuntime", "cdda ", "libc++")
     ))[-15000:], flush=True)
     for name in ("debug.log","crash.log"):
         result = subprocess.run(["adb","shell","tail","-80",
@@ -71,6 +71,9 @@ def report_failure():
         print(result.stdout[-9000:],flush=True)
 
 
+# Match a contemporary phone. The emulator action defaults to a 640x320 display.
+adb("shell", "wm", "size", "1080x2400")
+adb("shell", "wm", "density", "300")
 adb("install", "-r", "Cataclysm-AI-0.1-arm64.apk")
 try:
     exercise(False)
