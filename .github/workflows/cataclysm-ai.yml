@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   apk:
-    if: github.ref == 'refs/heads/ai-alpha'
+    if: github.ref == 'refs/heads/ai-alpha' && !startsWith(github.event.head_commit.message, 'Test published APK ')
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
@@ -58,13 +58,24 @@ jobs:
         run: gh release create "ai-0.1-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" Cataclysm-AI-0.1-arm64.apk --target "$GITHUB_SHA" --prerelease --title 'Cataclysm AI Alpha 0.1' --notes "ARM64 · $GITHUB_SHA"
   smoke:
     needs: apk
+    if: always() && !cancelled() && github.ref == 'refs/heads/ai-alpha' && (needs.apk.result == 'success' || (needs.apk.result == 'skipped' && startsWith(github.event.head_commit.message, 'Test published APK ')))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Download published APK for retest
+        if: needs.apk.result == 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          tag=$(head -1 <<< "$MESSAGE" | cut -d' ' -f4)
+          [[ "$tag" =~ ^ai-0[.]1-[0-9]+-[0-9]+$ ]]
+          gh release download "$tag" --pattern Cataclysm-AI-0.1-arm64.apk
       - uses: actions/download-artifact@v4
+        if: needs.apk.result == 'success'
         with:
           name: Cataclysm-AI-0.1-arm64
       - name: Enable emulator acceleration
