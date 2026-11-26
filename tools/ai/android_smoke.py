@@ -23,6 +23,8 @@ def click_text(wanted, timeout):
             time.sleep(1)
             continue
         nodes = list(tree.iter("node"))
+        if wanted != "Start Game" and any(n.get("package") == "com.google.android.apps.nexuslauncher" for n in nodes):
+            raise RuntimeError("Returned to Android launcher while waiting for " + wanted)
         last_labels = [n.get("text") for n in nodes if n.get("text")]
         for node in nodes:
             if node.get("text", "").casefold() == wanted.casefold():
@@ -42,14 +44,44 @@ def click_text(wanted, timeout):
     raise RuntimeError(f"Android UI did not display {wanted!r}. Visible labels: {last_labels!r}")
 
 
+def exercise(software):
+    adb("shell", "am", "start", "-n", PACKAGE + "/com.cleverraven.cataclysmdda.SplashScreen")
+    if software:
+        click_text("Software rendering", 240)
+    click_text("Start Game", 240)
+    time.sleep(12)  # SDL finishes applying its final orientation after the activity appears.
+    click_text("ИИ", 120)
+    click_text("API и личность", 60)
+    click_text("Сохранить", 60)
+    click_text("ИИ", 60)
+    click_text("Память персонажа", 60)
+    click_text("Закрыть", 60)
+    print("Installed ARM64 APK, opened game activity, saved settings and opened memory.")
+
+
+def report_failure():
+    print(adb("logcat", "-b", "crash", "-d")[-14000:], flush=True)
+    lines = adb("logcat", "-d", "-t", "4000").splitlines()
+    print("\n".join(line for line in lines if any(
+        key in line for key in ("SDL", "FATAL", "libmain.so", "cataclysmdda", "AndroidRuntime")
+    ))[-15000:], flush=True)
+    for name in ("debug.log","crash.log"):
+        result = subprocess.run(["adb","shell","tail","-80",
+            f"/sdcard/Android/data/{PACKAGE}/files/config/{name}"], capture_output=True, text=True)
+        print(result.stdout[-9000:],flush=True)
+
+
 adb("install", "-r", "Cataclysm-AI-0.1-arm64.apk")
-adb("shell", "am", "start", "-n", PACKAGE + "/com.cleverraven.cataclysmdda.SplashScreen")
-click_text("Start Game", 240)
-time.sleep(12)  # SDL finishes applying its final orientation after the activity appears.
-click_text("ИИ", 120)
-click_text("API и личность", 60)
-click_text("Сохранить", 60)
-click_text("ИИ", 60)
-click_text("Память персонажа", 60)
-click_text("Закрыть", 60)
-print("Installed ARM64 APK, opened game activity, saved settings and opened memory.")
+try:
+    exercise(False)
+except RuntimeError as failure:
+    print("Default renderer:", failure, flush=True)
+    report_failure()
+    adb("shell", "pm", "clear", PACKAGE)
+    adb("logcat", "-c")
+    try:
+        exercise(True)
+        print("Observer UI passed using software rendering.", flush=True)
+    except Exception:
+        report_failure()
+        raise
